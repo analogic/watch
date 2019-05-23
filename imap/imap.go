@@ -8,6 +8,8 @@ import (
 	"github.com/emersion/go-imap/client"
 	"log"
 	"os"
+	"strings"
+	"time"
 )
 
 var (
@@ -16,6 +18,11 @@ var (
 	password string
 	clean    bool
 	ssl      bool
+
+	awaitTimeout int
+	awaitSubject string
+
+	done chan error
 )
 
 func main() {
@@ -24,6 +31,9 @@ func main() {
 	flag.StringVar(&password, "password", "", "password")
 	flag.BoolVar(&clean, "clean", false, "clean whole INBOX afterwards")
 	flag.BoolVar(&ssl, "ssl", true, "start SSL connection (cert errors are ignored)")
+
+	flag.IntVar(&awaitTimeout, "await-timeout", 0, "number of seconds to wait for email with searched subject")
+	flag.StringVar(&awaitSubject, "await-subject", "", "part of searched subject")
 
 	flag.Parse()
 
@@ -59,7 +69,7 @@ func main() {
 
 	// List mailboxes
 	mailboxes := make(chan *imap.MailboxInfo, 10)
-	done := make(chan error, 1)
+	done = make(chan error, 1)
 	go func() {
 		done <- c.List("", "*", mailboxes)
 	}()
@@ -73,6 +83,37 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if awaitTimeout > 0 {
+		done := make(chan bool)
+		go func() {
+			for {
+				subjects := list(c)
+				for _, subject := range subjects {
+					if strings.Contains(subject, awaitSubject) {
+						done <- true
+					}
+				}
+				time.Sleep(time.Millisecond * 100)
+			}
+		}()
+
+		select {
+		case <-time.After(time.Duration(awaitTimeout) * time.Second):
+			fmt.Println("Timeouted")
+			os.Exit(1)
+		case <-done:
+			fmt.Println("DONE")
+		}
+
+	} else {
+		list(c)
+	}
+
+	log.Println("Done!")
+	os.Exit(0)
+}
+
+func list(c *client.Client) []string {
 	// Select INBOX
 	mbox, err := c.Select("INBOX", false)
 	if err != nil {
@@ -107,6 +148,13 @@ func main() {
 		}
 	}()
 
+	log.Println("Last 4 messages:")
+	result := make([]string, 0)
+	for msg := range messages {
+		log.Println("* " + msg.Envelope.Subject)
+		result = append(result, msg.Envelope.Subject)
+	}
+
 	if clean {
 		if err := c.Expunge(nil); err != nil {
 			fmt.Println("IMAP Message Delete Failed")
@@ -114,15 +162,5 @@ func main() {
 		}
 	}
 
-	log.Println("Last 4 messages:")
-	for msg := range messages {
-		log.Println("* " + msg.Envelope.Subject)
-
-	}
-
-	if err := <-done; err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println("Done!")
+	return result
 }

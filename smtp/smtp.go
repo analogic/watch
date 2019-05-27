@@ -2,9 +2,7 @@ package main
 
 import (
 	"flag"
-	"fmt"
-	"log"
-	"net/smtp"
+	"watch/watch"
 )
 
 var (
@@ -29,37 +27,5 @@ func main() {
 		panic("Invalid arguments")
 	}
 
-	// Connect to the remote SMTP server.
-	c, err := smtp.Dial(host)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Set the sender and recipient first
-	if err := c.Mail(from); err != nil {
-		log.Fatal(err)
-	}
-	if err := c.Rcpt(to); err != nil {
-		log.Fatal(err)
-	}
-
-	// Send the email body.
-	wc, err := c.Data()
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = fmt.Fprintf(wc, "From: %s\r\nTo: %s\r\nSubject: %subject\r\n\r\n%s", from, to, subject, body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = wc.Close()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Send the QUIT command and close the connection.
-	err = c.Quit()
-	if err != nil {
-		log.Fatal(err)
-	}
+	watch.SMTPSend(host, from, to, subject, body)
 }

@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 	"watch/watch"
@@ -27,6 +28,15 @@ func randSeq(n int) string {
 		b[i] = letters[rand.Intn(len(letters))]
 	}
 	return string(b)
+}
+
+func die(err error) {
+	if resultOnly {
+		fmt.Println(0)
+	} else {
+		log.Fatalln(err)
+	}
+	os.Exit(1)
 }
 
 func main() {
@@ -55,19 +65,25 @@ func main() {
 	log.Println("-------------------------------------------------------------------------------------------------")
 
 	log.Println("Sending email through SMTP")
-	watch.SMTPSend(s[0]+":"+s[1], s[2], s[3], subject, "Loop test body")
+	if err := watch.SMTPSend(s[0]+":"+s[1], s[2], s[3], subject, "Loop test body"); err != nil {
+		die(err)
+	}
 
 	log.Println("-------------------------------------------------------------------------------------------------")
 
 	log.Println("IMAP 1")
 	i1 := strings.Split(imap1, ":")
-	watch.ImapRetrieve(i1[0]+":"+i1[1], i1[2], i1[3], true, true, 10, subject)
+	if err := watch.ImapRetrieve(i1[0]+":"+i1[1], i1[2], i1[3], true, true, 10, subject); err != nil {
+		die(err)
+	}
 
 	log.Println("-------------------------------------------------------------------------------------------------")
 
 	log.Println("IMAP 2")
 	i2 := strings.Split(imap2, ":")
-	watch.ImapRetrieve(i2[0]+":"+i2[1], i2[2], i2[3], true, true, 10, subject)
+	if err := watch.ImapRetrieve(i2[0]+":"+i2[1], i2[2], i2[3], true, true, 10, subject); err != nil {
+		die(err)
+	}
 
 	elapsed := time.Since(start)
 	log.Printf("Send&Receive took %fs", elapsed.Seconds())

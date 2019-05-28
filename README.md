@@ -29,4 +29,4 @@ $ ./loop \
 ```
 
 #### Result:
-When success then process time is returned. If execution fail then process should return 1 as error code.
+When success then process time is returned. If execution fail then process should return 1 as error code and 0 as processing time

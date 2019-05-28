@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func ImapRetrieve(host string, username string, password string, clean bool, ssl bool, awaitTimeout int, awaitSubject string) {
+func ImapRetrieve(host string, username string, password string, clean bool, ssl bool, awaitTimeout int, awaitSubject string) error {
 	// Connect to server
 	var c *client.Client
 	var err error
@@ -24,7 +24,7 @@ func ImapRetrieve(host string, username string, password string, clean bool, ssl
 		c, err = client.DialTLS(host, &tls.Config{InsecureSkipVerify: true})
 	}
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	log.Println("Connected")
 	//c.SetDebug(os.Stdout)
@@ -35,7 +35,7 @@ func ImapRetrieve(host string, username string, password string, clean bool, ssl
 	// Login
 	if err := c.Login(username, password); err != nil {
 		log.Println("Login error:")
-		log.Fatal(err)
+		return err
 	}
 	log.Println("Logged in")
 
@@ -52,14 +52,19 @@ func ImapRetrieve(host string, username string, password string, clean bool, ssl
 	}
 
 	if err := <-done; err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	if awaitTimeout > 0 {
 		done := make(chan bool)
+		errch := make(chan error)
+
 		go func() {
 			for {
-				subjects := imapList(c, clean)
+				err, subjects := imapList(c, clean)
+				if err != nil {
+					errch <- err
+				}
 				for _, subject := range subjects {
 					if strings.Contains(subject, awaitSubject) {
 						done <- true
@@ -75,14 +80,21 @@ func ImapRetrieve(host string, username string, password string, clean bool, ssl
 			os.Exit(1)
 		case <-done:
 			log.Println("DONE")
+		case <-errch:
+			return err
 		}
 
 	} else {
-		imapList(c, clean)
+		err, _ := imapList(c, clean)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
-func imapList(c *client.Client, clean bool) []string {
+func imapList(c *client.Client, clean bool) (error, []string) {
 	result := make([]string, 0)
 
 	// Select INBOX
@@ -97,7 +109,7 @@ func imapList(c *client.Client, clean bool) []string {
 	to := mbox.Messages
 
 	if mbox.Messages == 0 {
-		return result
+		return nil, result
 	}
 
 	if mbox.Messages > 3 {
@@ -110,7 +122,7 @@ func imapList(c *client.Client, clean bool) []string {
 	messages := make(chan *imap.Message, 10)
 	if err = c.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope}, messages); err != nil {
 		log.Println("IMAP fetch failed")
-		os.Exit(1)
+		return err, result
 	}
 
 	if clean {
@@ -119,8 +131,7 @@ func imapList(c *client.Client, clean bool) []string {
 
 		if err := c.Store(seqset, item, flags, nil); err != nil {
 			log.Println("IMAP Message Flag Update Failed")
-			log.Println(err)
-			//os.Exit(1)
+			return err, result
 		}
 	}
 
@@ -133,45 +144,47 @@ func imapList(c *client.Client, clean bool) []string {
 	if clean {
 		if err := c.Expunge(nil); err != nil {
 			log.Println("IMAP Message Delete Failed")
-			//os.Exit(1)
+			return err, result
 		}
 	}
 
-	return result
+	return nil, result
 }
 
-func SMTPSend(host string, from string, to string, subject string, body string) {
+func SMTPSend(host string, from string, to string, subject string, body string) error {
 	// Connect to the remote SMTP server.
 	c, err := smtp.Dial(host)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// Set the sender and recipient first
 	if err := c.Mail(from); err != nil {
-		log.Fatal(err)
+		return err
 	}
 	if err := c.Rcpt(to); err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// Send the email body.
 	wc, err := c.Data()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	_, err = fmt.Fprintf(wc, "From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s", from, to, subject, body)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	err = wc.Close()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	// Send the QUIT command and close the connection.
 	err = c.Quit()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	return nil
 }

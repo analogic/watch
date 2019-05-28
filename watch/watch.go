@@ -27,7 +27,7 @@ func ImapRetrieve(host string, username string, password string, clean bool, ssl
 		log.Fatal(err)
 	}
 	log.Println("Connected")
-	c.SetDebug(os.Stdout)
+	//c.SetDebug(os.Stdout)
 
 	// Don't forget to logout
 	//defer c.Logout()
@@ -65,16 +65,16 @@ func ImapRetrieve(host string, username string, password string, clean bool, ssl
 						done <- true
 					}
 				}
-				time.Sleep(time.Millisecond * 100)
+				time.Sleep(time.Millisecond * 200)
 			}
 		}()
 
 		select {
 		case <-time.After(time.Duration(awaitTimeout) * time.Second):
-			fmt.Println("Timeouted")
+			log.Println("Timeouted")
 			os.Exit(1)
 		case <-done:
-			fmt.Println("DONE")
+			log.Println("DONE")
 		}
 
 	} else {
@@ -83,7 +83,7 @@ func ImapRetrieve(host string, username string, password string, clean bool, ssl
 }
 
 func imapList(c *client.Client, clean bool) []string {
-	var done chan error
+	result := make([]string, 0)
 
 	// Select INBOX
 	mbox, err := c.Select("INBOX", false)
@@ -95,6 +95,11 @@ func imapList(c *client.Client, clean bool) []string {
 	// Get the last 4 messages
 	from := uint32(1)
 	to := mbox.Messages
+
+	if mbox.Messages == 0 {
+		return result
+	}
+
 	if mbox.Messages > 3 {
 		// We're using unsigned integers here, only substract if the result is > 0
 		from = mbox.Messages - 3
@@ -103,24 +108,23 @@ func imapList(c *client.Client, clean bool) []string {
 	seqset.AddRange(to, from)
 
 	messages := make(chan *imap.Message, 10)
-	done = make(chan error, 1)
-	go func() {
-		done <- c.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope}, messages)
+	if err = c.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope}, messages); err != nil {
+		log.Println("IMAP fetch failed")
+		os.Exit(1)
+	}
 
-		if clean {
-			item := imap.FormatFlagsOp(imap.AddFlags, true)
-			flags := []interface{}{imap.DeletedFlag}
+	if clean {
+		item := imap.FormatFlagsOp(imap.AddFlags, true)
+		flags := []interface{}{imap.DeletedFlag}
 
-			if err := c.Store(seqset, item, flags, nil); err != nil {
-				log.Println("IMAP Message Flag Update Failed")
-				log.Println(err)
-				//os.Exit(1)
-			}
+		if err := c.Store(seqset, item, flags, nil); err != nil {
+			log.Println("IMAP Message Flag Update Failed")
+			log.Println(err)
+			//os.Exit(1)
 		}
-	}()
+	}
 
 	log.Println("Last 4 messages:")
-	result := make([]string, 0)
 	for msg := range messages {
 		log.Println("* " + msg.Envelope.Subject)
 		result = append(result, msg.Envelope.Subject)

@@ -64,13 +64,15 @@ func ImapRetrieve(host string, username string, password string, clean bool, ssl
 				err, subjects := imapList(c, clean)
 				if err != nil {
 					errch <- err
+					return
 				}
 				for _, subject := range subjects {
 					if strings.Contains(subject, awaitSubject) {
 						done <- true
+						return
 					}
 				}
-				time.Sleep(time.Millisecond * 200)
+				time.Sleep(time.Millisecond * 500)
 			}
 		}()
 
